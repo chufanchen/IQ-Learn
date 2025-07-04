@@ -42,7 +42,7 @@ def get_args(cfg: DictConfig):
 def main(cfg: DictConfig):
     args = get_args(cfg)
     wandb.init(project=args.project_name, entity='iq-learn',
-               sync_tensorboard=True, reinit=True, config=args)
+               sync_tensorboard=True, reinit=True, config=OmegaConf.to_container(args, resolve=True))
 
     # set seeds
     random.seed(args.seed)
