@@ -42,6 +42,7 @@ def main(cfg: DictConfig):
                    f'_{name}_{args.eval.expert_env}')
     else:
         agent.load(hydra.utils.to_absolute_path(policy_file), f'_{name}_{args.env.name}')
+        # agent.load(hydra.utils.to_absolute_path(policy_file), f'_{args.env.name}')
 
     eval_returns, eval_timesteps = evaluate(agent, env, num_episodes=args.eval.eps)
     print(f'Avg. eval returns: {np.mean(eval_returns)}, timesteps: {np.mean(eval_timesteps)}')
@@ -156,7 +157,6 @@ def eps(rewards):
 
 def part_eps(rewards):
     return [np.cumsum(x) for x in rewards]
-
 
 if __name__ == '__main__':
     main()
