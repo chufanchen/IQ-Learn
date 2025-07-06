@@ -135,3 +135,6 @@ iq_learn/.vscode
 iq_learn/envs
 iq_learn/experts
 iq_learn/vis
+iq_learn/D4RL
+outputs/
+.vscode

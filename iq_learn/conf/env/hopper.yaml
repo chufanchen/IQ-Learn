@@ -3,6 +3,9 @@
 env:
   name: Hopper-v2
   demo: Hopper-v2_25.pkl
+  env_name: hopper
+  dataset: medium-expert
+  dversion: 2
   # learn_steps: 1e5
   # eval_interval: 1e3
 

@@ -53,6 +53,8 @@ eval_only: False
 offline: False
 # Number of actor updates per env step
 num_actor_updates: 1
+# Replace GT-reward with learnt reward
+replace_reward: False
 
 defaults:
   - method: iq

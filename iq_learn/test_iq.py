@@ -1,11 +1,10 @@
 from itertools import count
-
+from scipy.stats import spearmanr, pearsonr
 import hydra
 import torch
 import numpy as np
 import os
 from omegaconf import DictConfig, OmegaConf
-from scipy.stats import spearmanr, pearsonr
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
@@ -13,11 +12,16 @@ import wandb
 from make_envs import make_env
 from agent import make_agent
 from utils.utils import evaluate
+import pickle
 
 def get_args(cfg: DictConfig):
     cfg.device = "cuda:0" if torch.cuda.is_available() else "cpu"
     print(OmegaConf.to_yaml(cfg))
     return cfg
+
+def normalize(x):
+    x = np.array(x)
+    return (x - x.mean()) / (x.std() + 1e-8)
 
 
 @hydra.main(config_path="conf", config_name="config")
@@ -48,8 +52,37 @@ def main(cfg: DictConfig):
     print(f'Avg. eval returns: {np.mean(eval_returns)}, timesteps: {np.mean(eval_timesteps)}')
     if args.eval_only:
         exit()
-
+    elif args.offline and args.replace_reward:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(script_dir)
+        dataset_path = f"D4RL/{args.env.env_name}-{args.env.dataset}-v{args.env.dversion}.pkl"
+        with open(dataset_path, "rb") as f:
+            trajectories = pickle.load(f)
+        GT_rewards, learnt_rewards = [], []
+        for path in trajectories:
+            traj_len = path["observations"].shape[0]
+            path["GT_rewards"] = path["rewards"].copy()
+            GT_reward, learnt_reward = [], []
+            for i in range(traj_len):
+                GT_reward.append(path["rewards"][i])
+                irl_reward = recover_reward(args, agent, path["observations"][i], path["actions"][i], path["observations"][min(i+1, traj_len-1)], path["terminals"][i])
+                path["rewards"][i] = irl_reward
+                learnt_reward.append(path["rewards"][i])
+            GT_rewards.append(GT_reward)
+            learnt_rewards.append(learnt_reward)
+        print(f'Pearson correlation: {pearsonr(normalize(eps(learnt_rewards)), normalize(eps(GT_rewards)))}')
+        
+        exit()
     measure_correlations(agent, env, args, log=True)
+    
+def recover_reward(args, agent, state, action, next_state, done):
+    GAMMA = args.gamma
+    with torch.no_grad():
+        q = agent.infer_q(state, action)
+        next_v = agent.infer_v(next_state)
+        y = (1 - done) * GAMMA * next_v
+        irl_reward = -(q - y) # TODO: flip sign
+    return irl_reward
 
 
 def measure_correlations(agent, env, args, log=False, use_wandb=False):
