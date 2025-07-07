@@ -13,6 +13,7 @@ from make_envs import make_env
 from agent import make_agent
 from utils.utils import evaluate
 import pickle
+from pathlib import Path
 
 def get_args(cfg: DictConfig):
     cfg.device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -53,32 +54,35 @@ def main(cfg: DictConfig):
     if args.eval_only:
         exit()
     elif args.offline and args.replace_reward:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(script_dir)
-        dataset_path = f"D4RL/{args.env.env_name}-{args.env.dataset}-v{args.env.dversion}.pkl"
+        dataset_path = Path(__file__).parent.resolve() / f"../../../D4RL/{args.env.env_name}-{args.env.dataset}-v{args.env.dversion}.pkl"
         with open(dataset_path, "rb") as f:
             trajectories = pickle.load(f)
         GT_rewards, learnt_rewards = [], []
         for path in trajectories:
             traj_len = path["observations"].shape[0]
             path["GT_rewards"] = path["rewards"].copy()
-            GT_reward, learnt_reward = [], []
-            for i in range(traj_len):
-                GT_reward.append(path["rewards"][i])
-                irl_reward = recover_reward(args, agent, path["observations"][i], path["actions"][i], path["observations"][min(i+1, traj_len-1)], path["terminals"][i])
-                path["rewards"][i] = irl_reward
-                learnt_reward.append(path["rewards"][i])
-            GT_rewards.append(GT_reward)
-            learnt_rewards.append(learnt_reward)
+            states = path["observations"][:traj_len]
+            actions = path["actions"][:traj_len]
+            dones = path["terminals"][:traj_len]
+            next_states = np.empty_like(states)
+            if traj_len > 1:
+                next_states[:-1] = states[1:]
+            next_states[-1] = states[-1]
+            irl_rewards = recover_reward(args, agent, states, actions, next_states, dones)
+            path["rewards"][:traj_len] = irl_rewards
+            GT_rewards.append(path["GT_rewards"].copy())
+            learnt_rewards.append(irl_rewards)
         print(f'Pearson correlation: {pearsonr(normalize(eps(learnt_rewards)), normalize(eps(GT_rewards)))}')
-        
+        with open(Path(__file__).parent.resolve() / f"../../../D4RL/{args.env.env_name}-{args.env.dataset}-proxy-v{args.env.dversion}.pkl", "wb") as f:
+            pickle.dump(trajectories, f)
+        measure_correlations(agent, env, args, log=True)
         exit()
     measure_correlations(agent, env, args, log=True)
     
 def recover_reward(args, agent, state, action, next_state, done):
     GAMMA = args.gamma
     with torch.no_grad():
-        q = agent.infer_q(state, action)
+        q = agent.infer_q(state, action).squeeze(-1) 
         next_v = agent.infer_v(next_state)
         y = (1 - done) * GAMMA * next_v
         irl_reward = -(q - y) # TODO: flip sign
